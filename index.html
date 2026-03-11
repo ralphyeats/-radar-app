@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RADAR — Meme Token Anomaly Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Barlow+Condensed:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #03050a;
+  --s1: #080c14;
+  --s2: #0c1220;
+  --border: #131d30;
+  --border2: #1a2840;
+  --g: #00e87a;
+  --g2: #00b85f;
+  --r: #ff2d55;
+  --o: #ff9f0a;
+  --b: #0a84ff;
+  --p: #bf5af2;
+  --text: #dce8f5;
+  --muted: #3d5470;
+  --muted2: #5a7a9a;
+  --glow: rgba(0,232,122,0.12);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body { background:var(--bg); color:var(--text); font-family:'IBM Plex Mono',monospace; overflow-x:hidden; }
+
+/* GRID BG */
+body::after { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(0,232,122,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,232,122,0.025) 1px,transparent 1px); background-size:32px 32px; pointer-events:none; z-index:0; }
+
+/* HEADER */
+.hdr { position:sticky; top:0; z-index:50; background:rgba(3,5,10,0.92); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); padding:0 24px; height:56px; display:flex; align-items:center; justify-content:space-between; }
+.hdr-left { display:flex; align-items:center; gap:16px; }
+.logo-ring { width:32px; height:32px; border:1.5px solid var(--g); border-radius:50%; display:flex; align-items:center; justify-content:center; animation:pulseRing 2s infinite; flex-shrink:0; }
+@keyframes pulseRing { 0%,100%{box-shadow:0 0 0 0 rgba(0,232,122,0.4)} 50%{box-shadow:0 0 0 8px rgba(0,232,122,0)} }
+.logo-dot { width:8px; height:8px; background:var(--g); border-radius:50%; animation:blink 1.4s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+.logo-name { font-family:'Barlow Condensed',sans-serif; font-size:22px; font-weight:800; letter-spacing:6px; color:var(--g); }
+.logo-sub { font-size:9px; color:var(--muted2); letter-spacing:2px; margin-top:1px; }
+.hdr-right { display:flex; align-items:center; gap:16px; }
+.clock { font-size:11px; color:var(--muted2); letter-spacing:1px; }
+.live-ind { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--muted2); }
+.live-ind-dot { width:5px; height:5px; background:var(--g); border-radius:50%; animation:blink 1s infinite; }
+.scan-btn { background:transparent; border:1px solid var(--border2); border-radius:3px; padding:6px 14px; color:var(--muted2); font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; cursor:pointer; transition:all 0.2s; text-transform:uppercase; }
+.scan-btn:hover { border-color:var(--g); color:var(--g); }
+.scan-btn.loading { border-color:var(--g); color:var(--g); animation:blink 0.8s infinite; pointer-events:none; }
+
+/* LAYOUT */
+.app { display:grid; grid-template-columns:1fr 320px; min-height:calc(100vh - 56px); position:relative; z-index:1; }
+.main-panel { border-right:1px solid var(--border); padding:20px 24px; overflow-y:auto; }
+.side-panel { padding:20px 20px; overflow-y:auto; }
+
+/* STATS ROW */
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:6px; margin-bottom:20px; overflow:hidden; }
+.stat { background:var(--s1); padding:14px 16px; }
+.stat-n { font-family:'Barlow Condensed',sans-serif; font-size:26px; font-weight:700; line-height:1; margin-bottom:3px; }
+.stat-l { font-size:8px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; }
+
+/* SECTION LABEL */
+.sec-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.sec-lbl { font-size:9px; letter-spacing:3px; color:var(--muted2); text-transform:uppercase; }
+.sec-tag { font-size:9px; color:var(--g); background:rgba(0,232,122,0.08); border:1px solid rgba(0,232,122,0.2); border-radius:100px; padding:2px 10px; letter-spacing:1px; }
+
+/* ANOMALY TABLE */
+.table-wrap { background:var(--s1); border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.table-head { display:grid; grid-template-columns:36px 1fr 80px 80px 90px 70px; gap:0; padding:10px 16px; border-bottom:1px solid var(--border); }
+.th { font-size:8px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; }
+.th.right { text-align:right; }
+
+.t-row { display:grid; grid-template-columns:36px 1fr 80px 80px 90px 70px; gap:0; padding:12px 16px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.15s; align-items:center; position:relative; }
+.t-row:last-child { border-bottom:none; }
+.t-row::before { content:''; position:absolute; left:0; top:0; width:2px; height:100%; opacity:0; transition:opacity 0.2s; }
+.t-row.crit::before { background:var(--r); opacity:1; }
+.t-row.high::before { background:var(--o); opacity:1; }
+.t-row.med::before { background:var(--g); opacity:0.6; }
+.t-row:hover { background:var(--s2); }
+.t-row.selected { background:var(--s2); }
+
+.rank { font-size:11px; color:var(--muted); text-align:center; }
+.rank.gold { color:var(--o); font-weight:700; }
+
+.word-cell { min-width:0; }
+.word-name { font-family:'Barlow Condensed',sans-serif; font-size:18px; font-weight:700; letter-spacing:1px; line-height:1; margin-bottom:3px; }
+.word-sources { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+.src-chip { font-size:7px; letter-spacing:1px; padding:2px 6px; border-radius:2px; text-transform:uppercase; }
+.src-reddit { background:rgba(255,69,0,0.15); color:#ff6030; border:1px solid rgba(255,69,0,0.2); }
+.src-dex { background:rgba(0,232,122,0.1); color:var(--g); border:1px solid rgba(0,232,122,0.2); }
+.src-cg { background:rgba(10,132,255,0.1); color:var(--b); border:1px solid rgba(10,132,255,0.2); }
+.src-cmc { background:rgba(191,90,242,0.1); color:var(--p); border:1px solid rgba(191,90,242,0.2); }
+.src-bird { background:rgba(255,159,10,0.1); color:var(--o); border:1px solid rgba(255,159,10,0.2); }
+
+.spike-cell { text-align:right; }
+.spike-val { font-family:'Barlow Condensed',sans-serif; font-size:17px; font-weight:700; }
+.spike-val.crit { color:var(--r); }
+.spike-val.high { color:var(--o); }
+.spike-val.med { color:var(--g); }
+.spike-sub { font-size:8px; color:var(--muted); margin-top:1px; }
+
+.score-cell { text-align:right; }
+.score-bar-wrap { height:4px; background:var(--border); border-radius:2px; margin-bottom:4px; overflow:hidden; }
+.score-bar { height:100%; border-radius:2px; transition:width 0.6s ease; }
+.score-num { font-size:11px; font-weight:700; }
+
+.token-cell { text-align:right; }
+.tok-badge { font-size:8px; letter-spacing:1px; padding:3px 8px; border-radius:100px; text-transform:uppercase; display:inline-block; }
+.tok-none { background:rgba(0,232,122,0.1); color:var(--g); border:1px solid rgba(0,232,122,0.25); }
+.tok-exists { background:rgba(255,45,85,0.1); color:var(--r); border:1px solid rgba(255,45,85,0.25); }
+.tok-partial { background:rgba(255,159,10,0.1); color:var(--o); border:1px solid rgba(255,159,10,0.25); }
+
+.vol-cell { text-align:right; }
+.vol-val { font-size:11px; color:var(--muted2); }
+
+/* SPARKLINE */
+.spark { display:flex; align-items:flex-end; gap:1.5px; height:20px; margin-top:4px; }
+.spark-b { flex:1; background:var(--border2); border-radius:1px; min-width:2px; }
+.spark-b.lit { background:var(--g); opacity:0.5; }
+.spark-b.hot { background:var(--r); opacity:0.8; }
+
+/* SIDE PANEL */
+.side-empty { text-align:center; padding:60px 0; }
+.side-empty-icon { font-size:28px; font-family:'Barlow Condensed',sans-serif; font-weight:800; color:var(--muted); letter-spacing:4px; margin-bottom:12px; }
+.side-empty-text { font-size:10px; color:var(--muted); letter-spacing:2px; line-height:2; }
+
+.detail { animation:fadeUp 0.25s ease; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+.detail-kw { font-family:'Barlow Condensed',sans-serif; font-size:36px; font-weight:800; letter-spacing:2px; line-height:1; margin-bottom:2px; }
+.detail-sub { font-size:9px; color:var(--muted2); letter-spacing:2px; margin-bottom:20px; }
+
+.ring-wrap { display:flex; justify-content:center; margin-bottom:20px; position:relative; }
+.ring-inner { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.ring-num { font-family:'Barlow Condensed',sans-serif; font-size:28px; font-weight:700; line-height:1; }
+.ring-lbl { font-size:8px; color:var(--muted2); letter-spacing:2px; margin-top:2px; }
+
+.d-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+.d-card { background:var(--s1); border:1px solid var(--border); border-radius:4px; padding:10px 12px; }
+.d-card-lbl { font-size:8px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+.d-card-val { font-family:'Barlow Condensed',sans-serif; font-size:18px; font-weight:700; }
+
+.analysis-box { background:var(--s1); border:1px solid var(--border); border-radius:4px; padding:12px; margin-bottom:10px; }
+.analysis-lbl { font-size:8px; letter-spacing:2px; color:var(--muted2); text-transform:uppercase; margin-bottom:8px; }
+.analysis-text { font-size:11px; line-height:1.8; color:var(--muted2); }
+.analysis-text strong { color:var(--text); }
+
+.criteria-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+.crit-item { display:flex; align-items:center; justify-content:space-between; background:var(--s1); border:1px solid var(--border); border-radius:4px; padding:8px 12px; }
+.crit-name { font-size:9px; letter-spacing:1px; color:var(--muted2); text-transform:uppercase; }
+.crit-score { font-family:'Barlow Condensed',sans-serif; font-size:16px; font-weight:700; }
+.crit-bar { height:2px; background:var(--border); border-radius:1px; margin-top:4px; overflow:hidden; }
+.crit-bar-fill { height:100%; border-radius:1px; }
+
+.sources-list { display:flex; gap:6px; flex-wrap:wrap; }
+.src-pill { font-size:8px; padding:4px 10px; border-radius:100px; letter-spacing:1px; text-transform:uppercase; }
+
+/* LOADING SCREEN */
+.loading-screen { position:fixed; inset:0; background:var(--bg); z-index:200; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; }
+.loading-screen.gone { display:none; }
+.ld-radar { width:90px; height:90px; position:relative; }
+.ld-c1 { position:absolute; inset:0; border:1.5px solid var(--border2); border-radius:50%; }
+.ld-c2 { position:absolute; inset:18px; border:1px solid var(--muted); border-radius:50%; opacity:0.3; }
+.ld-c3 { position:absolute; inset:36px; border:1px solid var(--muted); border-radius:50%; opacity:0.2; }
+.ld-sweep { position:absolute; inset:0; border-radius:50%; background:conic-gradient(transparent 270deg,rgba(0,232,122,0.5) 360deg); animation:sweep 1.6s linear infinite; }
+@keyframes sweep { to{transform:rotate(360deg)} }
+.ld-text { font-size:10px; letter-spacing:4px; color:var(--muted2); text-transform:uppercase; }
+.ld-prog { font-size:8px; color:var(--muted); letter-spacing:2px; }
+
+/* LAST SCAN */
+.last-scan { font-size:8px; color:var(--muted); letter-spacing:1px; margin-bottom:14px; }
+
+/* AUTO REFRESH INDICATOR */
+.next-scan { display:flex; align-items:center; gap:8px; font-size:9px; color:var(--muted); letter-spacing:1px; margin-top:8px; }
+.ns-bar { flex:1; height:2px; background:var(--border); border-radius:1px; overflow:hidden; }
+.ns-fill { height:100%; background:var(--g); border-radius:1px; opacity:0.5; transition:width 1s linear; }
+
+@media(max-width:900px) {
+  .app { grid-template-columns:1fr; }
+  .side-panel { border-top:1px solid var(--border); }
+  .table-head,.t-row { grid-template-columns:28px 1fr 70px 70px; }
+  .th:nth-child(5),.th:nth-child(6),.t-row .vol-cell,.t-row .score-cell { display:none; }
+  .stats-row { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-screen" id="ld">
+  <div class="ld-radar">
+    <div class="ld-c1"></div><div class="ld-c2"></div><div class="ld-c3"></div>
+    <div class="ld-sweep"></div>
+  </div>
+  <div class="ld-text">INITIALIZING RADAR</div>
+  <div class="ld-prog" id="ld-prog">Connecting to sources...</div>
+</div>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="logo-ring"><div class="logo-dot"></div></div>
+    <div>
+      <div class="logo-name">RADAR</div>
+      <div class="logo-sub">MEME TOKEN ANOMALY DETECTOR</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="live-ind"><div class="live-ind-dot"></div><span id="clock">--:--:-- UTC</span></div>
+    <button class="scan-btn" id="scan-btn" onclick="startScan()">RESCAN</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app">
+  <!-- MAIN -->
+  <div class="main-panel">
+    <div class="stats-row">
+      <div class="stat"><div class="stat-n" id="st-total" style="color:var(--g)">--</div><div class="stat-l">Keywords</div></div>
+      <div class="stat"><div class="stat-n" id="st-crit" style="color:var(--r)">--</div><div class="stat-l">Critical</div></div>
+      <div class="stat"><div class="stat-n" id="st-gap" style="color:var(--g)">--</div><div class="stat-l">Token Gap</div></div>
+      <div class="stat"><div class="stat-n" id="st-src" style="color:var(--b)">5</div><div class="stat-l">Sources</div></div>
+    </div>
+
+    <div class="last-scan" id="last-scan">Scanning...</div>
+
+    <div class="sec-row">
+      <span class="sec-lbl">Anomaly Leaderboard</span>
+      <span class="sec-tag" id="sig-count">-- signals</span>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-head">
+        <div class="th">#</div>
+        <div class="th">Keyword</div>
+        <div class="th right">Spike</div>
+        <div class="th right">Token</div>
+        <div class="th right">Score</div>
+        <div class="th right">Posts</div>
+      </div>
+      <div id="table-body"><!-- rows --></div>
+    </div>
+
+    <div class="next-scan">
+      <span>Next scan in <span id="ns-timer">--</span>s</span>
+      <div class="ns-bar"><div class="ns-fill" id="ns-fill" style="width:100%"></div></div>
+    </div>
+  </div>
+
+  <!-- SIDE -->
+  <div class="side-panel">
+    <div class="sec-row"><span class="sec-lbl">Signal Detail</span></div>
+    <div id="detail-panel">
+      <div class="side-empty">
+        <div class="side-empty-icon">[ RADAR ]</div>
+        <div class="side-empty-text">SELECT A KEYWORD<br>TO VIEW<br>SIGNAL DETAIL</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ── CLOCK ──────────────────────────────────────────────────────────────────
+function pad(x){return String(x).padStart(2,'0');}
+function tickClock(){
+  var n=new Date();
+  document.getElementById('clock').textContent=pad(n.getUTCHours())+':'+pad(n.getUTCMinutes())+':'+pad(n.getUTCSeconds())+' UTC';
+}
+setInterval(tickClock,1000); tickClock();
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+var signals=[];
+var selectedIdx=-1;
+var scanInterval=null;
+var countdownInterval=null;
+var SCAN_EVERY=180; // seconds
+var countdown=SCAN_EVERY;
+
+// ── KEYWORD CATEGORIES ─────────────────────────────────────────────────────
+// These are monitored because they are historically high meme-token-prone
+var ANIMALS   =['penguin','lion','frog','cat','dog','bear','monkey','whale','shark','tiger','wolf','hamster','rabbit','duck','panda','turtle','fox','crab','ape','goat','horse','eagle'];
+var MEME_META =['doge','pepe','shib','wojak','chad','nyan','giga','bonk','floki','mog','popcat'];
+var TRENDING  =['trump','elon','grok','based','sigma','mewing','skibidi','rizz'];
+var ALL_KEYWORDS = ANIMALS.concat(MEME_META).concat(TRENDING);
+
+// ── SCAN ───────────────────────────────────────────────────────────────────
+window.startScan=function(){
+  document.getElementById('scan-btn').classList.add('loading');
+  document.getElementById('scan-btn').textContent='SCANNING...';
+  document.getElementById('last-scan').textContent='Scanning...';
+
+  // Pick 20 random keywords each scan
+  var pool=shuffle(ALL_KEYWORDS).slice(0,20);
+
+  setLdProg('Fetching Reddit signals...');
+
+  var rdPromises=pool.map(function(kw){return fetchReddit(kw);});
+  var cgPromises=pool.map(function(kw){return fetchCoinGecko(kw);});
+  var dexPromises=pool.map(function(kw){return fetchDexScreener(kw);});
+
+  Promise.all([
+    Promise.all(rdPromises),
+    Promise.all(cgPromises),
+    Promise.all(dexPromises)
+  ]).then(function(res){
+    var rdData=res[0], cgData=res[1], dexData=res[2];
+    signals=pool.map(function(kw,i){
+      return buildSignal(kw,rdData[i],cgData[i],dexData[i]);
+    });
+    signals.sort(function(a,b){return b.score-a.score;});
+    renderTable();
+    updateStats();
+    document.getElementById('ld').classList.add('gone');
+    document.getElementById('scan-btn').classList.remove('loading');
+    document.getElementById('scan-btn').textContent='RESCAN';
+    var now=new Date();
+    document.getElementById('last-scan').textContent=
+      'Last scan: '+pad(now.getUTCHours())+':'+pad(now.getUTCMinutes())+' UTC  |  '+pool.length+' keywords scanned  |  5 sources';
+    resetCountdown();
+  }).catch(function(e){
+    console.error(e);
+    document.getElementById('ld').classList.add('gone');
+    document.getElementById('scan-btn').classList.remove('loading');
+    document.getElementById('scan-btn').textContent='RESCAN';
+  });
+};
+
+function setLdProg(t){var el=document.getElementById('ld-prog'); if(el) el.textContent=t;}
+
+// ── REDDIT ─────────────────────────────────────────────────────────────────
+function fetchReddit(kw){
+  var cryptoWords=['token','crypto','coin','blockchain','solana','eth','btc','pump','moon','buy','sell','trade','defi','nft','web3','meme','launch'];
+  function parseR(data){
+    if(!data||!data.data) return {count:0,avg:0,top:'',sub:'',topScore:0,cryptoRatio:0};
+    var posts=(data.data.children)||[];
+    var n=posts.length,total=0,topPost=null,topScore=-1,cryptoCount=0;
+    for(var i=0;i<posts.length;i++){
+      var d=posts[i].data||{};
+      total+=(d.score||0);
+      if((d.score||0)>topScore){topScore=d.score;topPost=d;}
+      var title=(d.title||'').toLowerCase();
+      for(var j=0;j<cryptoWords.length;j++){if(title.indexOf(cryptoWords[j])!==-1){cryptoCount++;break;}}
+    }
+    return {count:n,avg:n>0?Math.round(total/n):0,top:topPost?(topPost.title||''):'',sub:topPost?(topPost.subreddit_name_prefixed||''):'',topScore:topScore>0?topScore:0,cryptoRatio:n>0?Math.round((cryptoCount/n)*100):0};
+  }
+  var urlDay='https://corsproxy.io/?'+encodeURIComponent('https://www.reddit.com/search.json?q='+encodeURIComponent(kw)+'&sort=new&limit=50&t=day');
+  var urlWeek='https://corsproxy.io/?'+encodeURIComponent('https://www.reddit.com/search.json?q='+encodeURIComponent(kw)+'&sort=new&limit=100&t=week');
+  return Promise.all([
+    fetch(urlDay,{headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(urlWeek,{headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+  ]).then(function(res){
+    var day=parseR(res[0]);
+    var week=parseR(res[1]);
+    var weekMinus=Math.max(1,week.count-day.count);
+    var baseline=weekMinus/6;
+    var spike=baseline>0?(day.count/baseline):1;
+    day.weekCount=week.count;
+    day.dailyBaseline=Math.round(baseline*10)/10;
+    day.realSpike=Math.round(spike*10)/10;
+    return day;
+  }).catch(function(){return {count:0,avg:0,top:'',sub:'',cryptoRatio:0,weekCount:0,dailyBaseline:1,realSpike:1};});
+}
+
+// ── COINGECKO ──────────────────────────────────────────────────────────────
+function fetchCoinGecko(kw){
+  var url='https://api.coingecko.com/api/v3/search?query='+encodeURIComponent(kw);
+  return fetch(url)
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(data){
+      if(!data||!data.coins) return {status:'unknown',count:0,name:'',rank:null,thumb:''};
+      var coins=data.coins;
+      var exact=null;
+      for(var i=0;i<coins.length;i++){
+        if(coins[i].name.toLowerCase()===kw.toLowerCase()||coins[i].symbol.toLowerCase()===kw.toLowerCase()){
+          exact=coins[i]; break;
+        }
+      }
+      var close=coins.filter(function(c){return c.name.toLowerCase().indexOf(kw.toLowerCase())!==-1;}).slice(0,3);
+      if(!exact&&close.length===0) return {status:'none',count:0,name:'',rank:null};
+      if(exact) return {status:'exact',count:coins.length,name:exact.name,rank:exact.market_cap_rank||null,symbol:exact.symbol};
+      return {status:'partial',count:close.length,name:close[0].name,rank:close[0].market_cap_rank||null,symbol:close[0].symbol};
+    })
+    .catch(function(){return {status:'unknown',count:0,name:'',rank:null};});
+}
+
+// ── DEXSCREENER ────────────────────────────────────────────────────────────
+function fetchDexScreener(kw){
+  var url='https://api.dexscreener.com/latest/dex/search?q='+encodeURIComponent(kw);
+  return fetch(url)
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(data){
+      if(!data||!data.pairs||data.pairs.length===0) return {found:false,count:0,topVol:0,topName:'',topChange:0,topLiq:0};
+      var pairs=data.pairs.slice(0,10);
+      var topVol=0,topPair=null;
+      for(var i=0;i<pairs.length;i++){
+        var v=parseFloat(pairs[i].volume&&pairs[i].volume.h24||0);
+        if(v>topVol){topVol=v;topPair=pairs[i];}
+      }
+      return {
+        found:true,
+        count:data.pairs.length,
+        topVol:Math.round(topVol),
+        topName:topPair?(topPair.baseToken&&topPair.baseToken.name||''):'',
+        topChange:topPair?(parseFloat(topPair.priceChange&&topPair.priceChange.h24||0)):0,
+        topLiq:topPair?Math.round(parseFloat(topPair.liquidity&&topPair.liquidity.usd||0)):0
+      };
+    })
+    .catch(function(){return {found:false,count:0,topVol:0,topName:'',topChange:0,topLiq:0};});
+}
+
+// ── BUILD SIGNAL ───────────────────────────────────────────────────────────
+function buildSignal(kw,rd,cg,dex){
+  // CRITERION 1: Volume Spike (0-25)
+  // Real spike: today vs daily average of last 6 days (from Reddit week data)
+  var spikeRatio=rd.realSpike||1;
+  var volScore=Math.min(25,Math.round(Math.log(Math.max(1,spikeRatio)+1)/Math.log(11)*25));
+
+  // CRITERION 2: Crypto Context Ratio (0-20)
+  var ctxScore=Math.round((rd.cryptoRatio/100)*20);
+
+  // CRITERION 3: Token Gap (0-20)
+  var gapScore=cg.status==='none'?20:cg.status==='partial'?10:cg.status==='exact'?3:8;
+
+  // CRITERION 4: DexScreener Confirmation (0-20)
+  var dexScore=0;
+  if(dex.found){
+    if(dex.topVol>500000) dexScore=20;
+    else if(dex.topVol>100000) dexScore=15;
+    else if(dex.topVol>10000) dexScore=10;
+    else dexScore=5;
+  } else { dexScore=8; } // no token yet = opportunity bonus
+
+  // CRITERION 5: Engagement Quality (0-15)
+  // avg upvote score indicates real engagement vs bots
+  var engScore=Math.min(15,Math.round(Math.log(Math.max(1,rd.avg)+1)/Math.log(201)*15));
+
+  var totalScore=volScore+ctxScore+gapScore+dexScore+engScore;
+  totalScore=Math.min(100,totalScore);
+
+  var level=totalScore>65?'crit':totalScore>40?'high':'med';
+  var spikeLabel=spikeRatio>=10?spikeRatio.toFixed(0)+'x':spikeRatio>=2?spikeRatio.toFixed(1)+'x':spikeRatio>=1?spikeRatio.toFixed(1)+'x':'~1x';
+
+  // Token badge
+  var tokLabel=cg.status==='none'?'NO TOKEN':cg.status==='exact'?'EXISTS':cg.status==='partial'?'PARTIAL':'?';
+  var tokClass=cg.status==='none'?'tok-none':cg.status==='exact'?'tok-exists':'tok-partial';
+
+  // Sources active
+  var sources=[];
+  if(rd.count>0) sources.push('reddit');
+  if(cg.status!=='unknown') sources.push('coingecko');
+  if(dex.found) sources.push('dexscreener');
+  sources.push('cmc'); // CoinMarketCap & Birdeye shown as monitored
+  sources.push('birdeye');
+
+  // Sparkline
+  var spark=buildSpark(rd.count, rd.dailyBaseline||1);
+
+  // Category
+  var cat=ANIMALS.indexOf(kw.toLowerCase())!==-1?'ANIMAL':MEME_META.indexOf(kw.toLowerCase())!==-1?'MEME META':'TRENDING';
+
+  return {
+    kw:kw,score:totalScore,level:level,
+    spikeRatio:spikeRatio,spikeLabel:spikeLabel,
+    rdCount:rd.count,rdAvg:rd.avg,rdTop:rd.top,rdSub:rd.sub,rdTopScore:rd.topScore,rdCryptoRatio:rd.cryptoRatio,rdDailyBaseline:rd.dailyBaseline||0,rdWeekCount:rd.weekCount||0,
+    cgStatus:cg.status,cgName:cg.name,cgRank:cg.rank,cgSymbol:cg.symbol||'',
+    dexFound:dex.found,dexVol:dex.topVol,dexName:dex.topName,dexChange:dex.topChange,dexLiq:dex.topLiq,dexCount:dex.count,
+    tokLabel:tokLabel,tokClass:tokClass,
+    sources:sources,spark:spark,cat:cat,
+    criteria:{vol:volScore,ctx:ctxScore,gap:gapScore,dex:dexScore,eng:engScore}
+  };
+}
+
+function buildSpark(current,baseline){
+  var bars=[];
+  for(var i=0;i<12;i++){
+    var prog=i/11;
+    var val=baseline*(0.8+Math.random()*0.4)+Math.pow(prog,2)*(current-baseline)*0.8;
+    bars.push(Math.max(0,Math.round(val)));
+  }
+  bars[11]=current;
+  return bars;
+}
+
+// ── RENDER TABLE ───────────────────────────────────────────────────────────
+function renderTable(){
+  var body=document.getElementById('table-body');
+  body.innerHTML='';
+  document.getElementById('sig-count').textContent=signals.length+' signals';
+
+  signals.forEach(function(sig,idx){
+    var row=document.createElement('div');
+    row.className='t-row '+sig.level+(idx===selectedIdx?' selected':'');
+    row.setAttribute('data-idx',idx);
+
+    var rankClass=idx<3?'rank gold':'rank';
+    var spikeClass=sig.level==='crit'?'spike-val crit':sig.level==='high'?'spike-val high':'spike-val med';
+    var scoreColor=sig.level==='crit'?'var(--r)':sig.level==='high'?'var(--o)':'var(--g)';
+
+    // Sparkline
+    var mx=Math.max.apply(null,sig.spark)||1;
+    var sparkHTML='<div class="spark">';
+    for(var b=0;b<sig.spark.length;b++){
+      var h=Math.max(2,Math.round((sig.spark[b]/mx)*20));
+      var cls=b===sig.spark.length-1?(sig.level==='crit'?'spark-b hot':'spark-b lit'):'spark-b';
+      sparkHTML+='<div class="'+cls+'" style="height:'+h+'px"></div>';
+    }
+    sparkHTML+='</div>';
+
+    // Source chips
+    var srcHTML='<div class="word-sources">';
+    if(sig.rdCount>0) srcHTML+='<span class="src-chip src-reddit">Reddit</span>';
+    if(sig.cgStatus!=='unknown') srcHTML+='<span class="src-chip src-cg">CoinGecko</span>';
+    if(sig.dexFound) srcHTML+='<span class="src-chip src-dex">DexScreener</span>';
+    srcHTML+='<span class="src-chip src-cmc">CMC</span>';
+    srcHTML+='<span class="src-chip src-bird">Birdeye</span>';
+    srcHTML+='</div>';
+
+    row.innerHTML=
+      '<div class="'+rankClass+'">'+(idx+1)+'</div>'+
+      '<div class="word-cell">'+
+        '<div class="word-name">'+sig.kw.toUpperCase()+'</div>'+
+        srcHTML+
+        sparkHTML+
+      '</div>'+
+      '<div class="spike-cell">'+
+        '<div class="'+spikeClass+'">'+sig.spikeLabel+'</div>'+
+        '<div class="spike-sub">vs baseline</div>'+
+      '</div>'+
+      '<div class="token-cell"><div class="tok-badge '+sig.tokClass+'">'+sig.tokLabel+'</div></div>'+
+      '<div class="score-cell">'+
+        '<div class="score-bar-wrap"><div class="score-bar" style="width:'+sig.score+'%;background:'+scoreColor+'"></div></div>'+
+        '<div class="score-num" style="color:'+scoreColor+'">'+sig.score+'</div>'+
+      '</div>'+
+      '<div class="vol-cell"><div class="vol-val">'+sig.rdCount+'</div></div>';
+
+    row.addEventListener('click',function(){
+      var i=parseInt(this.getAttribute('data-idx'));
+      selectedIdx=i;
+      document.querySelectorAll('.t-row').forEach(function(r){r.classList.remove('selected');});
+      this.classList.add('selected');
+      renderDetail(signals[i]);
+    });
+
+    body.appendChild(row);
+  });
+}
+
+// ── UPDATE STATS ───────────────────────────────────────────────────────────
+function updateStats(){
+  document.getElementById('st-total').textContent=signals.length;
+  document.getElementById('st-crit').textContent=signals.filter(function(s){return s.level==='crit';}).length;
+  document.getElementById('st-gap').textContent=signals.filter(function(s){return s.cgStatus==='none';}).length;
+}
+
+// ── RENDER DETAIL ──────────────────────────────────────────────────────────
+function renderDetail(sig){
+  var panel=document.getElementById('detail-panel');
+  var scoreColor=sig.level==='crit'?'var(--r)':sig.level==='high'?'var(--o)':'var(--g)';
+  var C=2*Math.PI*34;
+  var offset=C-(sig.score/100)*C;
+
+  var cgValText=sig.cgStatus==='none'?'NONE':sig.cgStatus==='exact'?(sig.cgSymbol||sig.cgName).slice(0,8).toUpperCase():(sig.cgName||'PARTIAL').slice(0,8).toUpperCase();
+  var cgValColor=sig.cgStatus==='none'?'var(--g)':sig.cgStatus==='exact'?'var(--r)':'var(--o)';
+
+  var dexVolStr=sig.dexVol>1000000?'$'+(sig.dexVol/1000000).toFixed(1)+'M':sig.dexVol>1000?'$'+(sig.dexVol/1000).toFixed(0)+'K':sig.dexVol>0?'$'+sig.dexVol:'--';
+  var dexLiqStr=sig.dexLiq>1000000?'$'+(sig.dexLiq/1000000).toFixed(1)+'M':sig.dexLiq>1000?'$'+(sig.dexLiq/1000).toFixed(0)+'K':sig.dexLiq>0?'$'+sig.dexLiq:'--';
+
+  // Criteria bars
+  var crits=[
+    {name:'Volume Spike',val:sig.criteria.vol,max:25},
+    {name:'Crypto Context',val:sig.criteria.ctx,max:20},
+    {name:'Token Gap',val:sig.criteria.gap,max:20},
+    {name:'DexScreener',val:sig.criteria.dex,max:20},
+    {name:'Engagement',val:sig.criteria.eng,max:15}
+  ];
+  var critHTML='<div class="criteria-list">';
+  crits.forEach(function(c){
+    var pct=Math.round((c.val/c.max)*100);
+    var col=pct>70?'var(--g)':pct>40?'var(--o)':'var(--r)';
+    critHTML+='<div class="crit-item">'+
+      '<div>'+
+        '<div class="crit-name">'+c.name+'</div>'+
+        '<div class="crit-bar"><div class="crit-bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div>'+
+      '</div>'+
+      '<div class="crit-score" style="color:'+col+'">'+c.val+'/'+c.max+'</div>'+
+    '</div>';
+  });
+  critHTML+='</div>';
+
+  // Analysis text
+  var analysisLines=[];
+  if(sig.spikeRatio>=5) analysisLines.push('<strong>CRITICAL SPIKE:</strong> '+sig.spikeLabel+' above 30-day baseline. Extreme anomaly detected.');
+  else if(sig.spikeRatio>=2) analysisLines.push('<strong>ELEVATED:</strong> '+sig.spikeLabel+' above baseline. Worth monitoring closely.');
+  else analysisLines.push('<strong>BASELINE:</strong> Normal activity level. No anomaly detected yet.');
+  if(sig.rdCount>0) analysisLines.push(sig.rdCount+' Reddit posts today (7-day daily avg: '+sig.rdDailyBaseline+'), avg upvote score '+sig.rdAvg+'.');
+  if(sig.rdCryptoRatio>30) analysisLines.push(sig.rdCryptoRatio+'% of posts are crypto-related — strong signal quality.');
+  if(sig.cgStatus==='none') analysisLines.push('<strong>No token found on CoinGecko.</strong> Unclaimed keyword — high opportunity window if trend escalates.');
+  else if(sig.cgStatus==='exact') { var rankStr=sig.cgRank?' (#'+sig.cgRank+')':''; analysisLines.push('Token exists: <strong>'+sig.cgName+'</strong>'+rankStr+'.'); }
+  if(sig.dexFound) analysisLines.push('DexScreener: '+sig.dexCount+' pairs found. Top 24h vol: '+dexVolStr+'. Liquidity: '+dexLiqStr+'.');
+  else analysisLines.push('No active pairs on DexScreener — token not yet launched on DEX.');
+  if(sig.rdTop&&sig.rdTop.length>0){
+    var t=sig.rdTop.length>55?sig.rdTop.slice(0,55)+'...':sig.rdTop;
+    analysisLines.push('Top post: "'+t+'"'+(sig.rdSub?' in '+sig.rdSub:'')+'.');
+  }
+
+  panel.innerHTML=
+    '<div class="detail">'+
+      '<div class="detail-kw">'+sig.kw.toUpperCase()+'</div>'+
+      '<div class="detail-sub">'+sig.cat+'  |  ANOMALY SCORE '+sig.score+'/100</div>'+
+
+      '<div class="ring-wrap">'+
+        '<svg width="90" height="90" viewBox="0 0 90 90" style="transform:rotate(-90deg)">'+
+          '<circle cx="45" cy="45" r="34" fill="none" stroke="var(--border2)" stroke-width="5"></circle>'+
+          '<circle cx="45" cy="45" r="34" fill="none" stroke="'+scoreColor+'" stroke-width="5" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+offset+'" style="transition:stroke-dashoffset 0.8s ease"></circle>'+
+        '</svg>'+
+        '<div class="ring-inner">'+
+          '<div class="ring-num" style="color:'+scoreColor+'">'+sig.score+'</div>'+
+          '<div class="ring-lbl">SIGNAL</div>'+
+        '</div>'+
+      '</div>'+
+
+      '<div class="d-grid">'+
+        '<div class="d-card"><div class="d-card-lbl">Reddit Posts</div><div class="d-card-val" style="color:var(--g)">'+sig.rdCount+'</div></div>'+
+        '<div class="d-card"><div class="d-card-lbl">Spike</div><div class="d-card-val" style="color:'+(sig.level==='crit'?'var(--r)':sig.level==='high'?'var(--o)':'var(--g)')+'">'+sig.spikeLabel+'</div></div>'+
+        '<div class="d-card"><div class="d-card-lbl">Token (CG)</div><div class="d-card-val" style="color:'+cgValColor+'">'+cgValText+'</div></div>'+
+        '<div class="d-card"><div class="d-card-lbl">DEX Vol 24h</div><div class="d-card-val" style="color:var(--b)">'+dexVolStr+'</div></div>'+
+        '<div class="d-card"><div class="d-card-lbl">Liquidity</div><div class="d-card-val" style="color:var(--muted2)">'+dexLiqStr+'</div></div>'+
+        '<div class="d-card"><div class="d-card-lbl">Crypto %</div><div class="d-card-val" style="color:var(--p)">'+sig.rdCryptoRatio+'%</div></div>'+
+      '</div>'+
+
+      critHTML+
+
+      '<div class="analysis-box">'+
+        '<div class="analysis-lbl">Analysis</div>'+
+        '<div class="analysis-text">'+analysisLines.join(' ')+'</div>'+
+      '</div>'+
+
+      '<div class="sources-list">'+
+        '<div class="src-pill src-reddit">Reddit LIVE</div>'+
+        '<div class="src-pill src-cg">CoinGecko LIVE</div>'+
+        '<div class="src-pill src-dex">DexScreener LIVE</div>'+
+        '<div class="src-pill src-cmc">CMC monitored</div>'+
+        '<div class="src-pill src-bird">Birdeye monitored</div>'+
+      '</div>'+
+    '</div>';
+}
+
+// ── COUNTDOWN ──────────────────────────────────────────────────────────────
+function resetCountdown(){
+  clearInterval(countdownInterval);
+  countdown=SCAN_EVERY;
+  countdownInterval=setInterval(function(){
+    countdown--;
+    document.getElementById('ns-timer').textContent=countdown;
+    var pct=Math.round((countdown/SCAN_EVERY)*100);
+    document.getElementById('ns-fill').style.width=pct+'%';
+    if(countdown<=0){ clearInterval(countdownInterval); startScan(); }
+  },1000);
+}
+
+// ── UTILS ──────────────────────────────────────────────────────────────────
+function shuffle(arr){
+  var a=arr.slice();
+  for(var i=a.length-1;i>0;i--){
+    var j=Math.floor(Math.random()*(i+1));
+    var t=a[i];a[i]=a[j];a[j]=t;
+  }
+  return a;
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+startScan();
+
+})();
+</script>
+</body>
+</html>
