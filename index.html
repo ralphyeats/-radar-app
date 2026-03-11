@@ -419,56 +419,18 @@ function fetchDexScreener(kw){
 
 // ── GOOGLE TRENDS (via unofficial API) ──────────────────────────
 function fetchGoogleTrends(kw){
-  var url='https://trends.google.com/trends/api/dailytrends?hl=en-US&tz=-300&geo=US&ns=15';
-  return fetch('https://corsproxy.io/?'+encodeURIComponent(url),{headers:{'Accept':'application/json'}})
-    .then(function(r){return r.ok?r.text():null;})
-    .then(function(text){
-      if(!text) return {trending:false,score:0};
-      try{
-        var clean=text.replace(")]}'\n",'');
-        var data=JSON.parse(clean);
-        var stories=data.default&&data.default.trendingSearchesDays?data.default.trendingSearchesDays:[];
-        var kwLow=kw.toLowerCase();
-        for(var d=0;d<stories.length;d++){
-          var searches=stories[d].trendingSearches||[];
-          for(var s=0;s<searches.length;s++){
-            var title=(searches[s].title&&searches[s].title.query||'').toLowerCase();
-            var traffic=parseInt((searches[s].formattedTraffic||'0').replace(/[^0-9]/g,''))||0;
-            if(title.indexOf(kwLow)!==-1){
-              return {trending:true,score:Math.min(20,Math.round(traffic/50000)),title:searches[s].title.query,traffic:traffic};
-            }
-          }
-        }
-        return {trending:false,score:0};
-      }catch(e){return {trending:false,score:0};}
-    })
+  return fetch('/api/trends?q='+encodeURIComponent(kw))
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){return d||{trending:false,score:0};})
     .catch(function(){return {trending:false,score:0};});
 }
 
 // ── PUMP.FUN new tokens ──────────────────────────────────────────
 function fetchPumpFun(kw){
-  var url='https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC&includeNsfw=false';
-  return fetch('https://corsproxy.io/?'+encodeURIComponent(url),{headers:{'Accept':'application/json'}})
+  return fetch('/api/pumpfun?q='+encodeURIComponent(kw))
     .then(function(r){return r.ok?r.json():null;})
-    .then(function(data){
-      if(!Array.isArray(data)) return {found:false,score:0,name:'',marketCap:0};
-      var kwLow=kw.toLowerCase();
-      var match=null;
-      for(var i=0;i<data.length;i++){
-        var name=(data[i].name||'').toLowerCase();
-        var symbol=(data[i].symbol||'').toLowerCase();
-        if(name.indexOf(kwLow)!==-1||symbol.indexOf(kwLow)!==-1){
-          match=data[i];
-          break;
-        }
-      }
-      if(!match) return {found:false,score:0,name:'',marketCap:0};
-      var mc=match.usd_market_cap||0;
-      var age=Math.max(1,Math.round((Date.now()/1000-(match.created_timestamp||0))/3600));
-      var score=age<1?15:age<6?10:age<24?5:2;
-      return {found:true,score:score,name:match.name,symbol:match.symbol,marketCap:Math.round(mc),age:age};
-    })
-    .catch(function(){return {found:false,score:0,name:'',marketCap:0};});
+    .then(function(d){return d||{found:false,score:0};})
+    .catch(function(){return {found:false,score:0};});
 }
 
 function buildSignal(kw,rd,cg,dex,gt,pf){
