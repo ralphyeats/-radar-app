@@ -299,15 +299,20 @@ window.startScan=function(){
   var rdPromises=pool.map(function(kw){return fetchReddit(kw);});
   var cgPromises=pool.map(function(kw){return fetchCoinGecko(kw);});
   var dexPromises=pool.map(function(kw){return fetchDexScreener(kw);});
+  // Fetch GT once (same data for all keywords) and PF once
+  var gtPromise=fetchGoogleTrends(pool[0]).then(function(r){return pool.map(function(kw){return fetchGoogleTrends(kw);});}).catch(function(){return pool.map(function(){return {trending:false,score:0};});});
+  var pfPromise=fetchPumpFun('').then(function(){return Promise.all(pool.map(function(kw){return fetchPumpFun(kw);}));}).catch(function(){return pool.map(function(){return {found:false,score:0};});});
 
   Promise.all([
     Promise.all(rdPromises),
     Promise.all(cgPromises),
-    Promise.all(dexPromises)
+    Promise.all(dexPromises),
+    Promise.all(pool.map(function(kw){return fetchGoogleTrends(kw);})),
+    Promise.all(pool.map(function(kw){return fetchPumpFun(kw);}))
   ]).then(function(res){
-    var rdData=res[0], cgData=res[1], dexData=res[2];
+    var rdData=res[0], cgData=res[1], dexData=res[2], gtData=res[3], pfData=res[4];
     signals=pool.map(function(kw,i){
-      return buildSignal(kw,rdData[i],cgData[i],dexData[i]);
+      return buildSignal(kw,rdData[i],cgData[i],dexData[i],gtData[i],pfData[i]);
     });
     signals.sort(function(a,b){return b.score-a.score;});
     renderTable();
@@ -345,8 +350,8 @@ function fetchReddit(kw){
     }
     return {count:n,avg:n>0?Math.round(total/n):0,top:topPost?(topPost.title||''):'',sub:topPost?(topPost.subreddit_name_prefixed||''):'',topScore:topScore>0?topScore:0,cryptoRatio:n>0?Math.round((cryptoCount/n)*100):0};
   }
-  var urlDay='https://corsproxy.io/?'+encodeURIComponent('https://www.reddit.com/search.json?q='+encodeURIComponent(kw)+'&sort=new&limit=50&t=day');
-  var urlWeek='https://corsproxy.io/?'+encodeURIComponent('https://www.reddit.com/search.json?q='+encodeURIComponent(kw)+'&sort=new&limit=100&t=week');
+  var urlDay='/api/reddit?q='+encodeURIComponent(kw)+'&limit=50&t=day';
+  var urlWeek='/api/reddit?q='+encodeURIComponent(kw)+'&limit=100&t=week';
   return Promise.all([
     fetch(urlDay,{headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
     fetch(urlWeek,{headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
@@ -411,7 +416,64 @@ function fetchDexScreener(kw){
 }
 
 // ── BUILD SIGNAL ───────────────────────────────────────────────────────────
-function buildSignal(kw,rd,cg,dex){
+
+// ── GOOGLE TRENDS (via unofficial API) ──────────────────────────
+function fetchGoogleTrends(kw){
+  var url='https://trends.google.com/trends/api/dailytrends?hl=en-US&tz=-300&geo=US&ns=15';
+  return fetch('https://corsproxy.io/?'+encodeURIComponent(url),{headers:{'Accept':'application/json'}})
+    .then(function(r){return r.ok?r.text():null;})
+    .then(function(text){
+      if(!text) return {trending:false,score:0};
+      try{
+        var clean=text.replace(")]}'\n",'');
+        var data=JSON.parse(clean);
+        var stories=data.default&&data.default.trendingSearchesDays?data.default.trendingSearchesDays:[];
+        var kwLow=kw.toLowerCase();
+        for(var d=0;d<stories.length;d++){
+          var searches=stories[d].trendingSearches||[];
+          for(var s=0;s<searches.length;s++){
+            var title=(searches[s].title&&searches[s].title.query||'').toLowerCase();
+            var traffic=parseInt((searches[s].formattedTraffic||'0').replace(/[^0-9]/g,''))||0;
+            if(title.indexOf(kwLow)!==-1){
+              return {trending:true,score:Math.min(20,Math.round(traffic/50000)),title:searches[s].title.query,traffic:traffic};
+            }
+          }
+        }
+        return {trending:false,score:0};
+      }catch(e){return {trending:false,score:0};}
+    })
+    .catch(function(){return {trending:false,score:0};});
+}
+
+// ── PUMP.FUN new tokens ──────────────────────────────────────────
+function fetchPumpFun(kw){
+  var url='https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC&includeNsfw=false';
+  return fetch('https://corsproxy.io/?'+encodeURIComponent(url),{headers:{'Accept':'application/json'}})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(data){
+      if(!Array.isArray(data)) return {found:false,score:0,name:'',marketCap:0};
+      var kwLow=kw.toLowerCase();
+      var match=null;
+      for(var i=0;i<data.length;i++){
+        var name=(data[i].name||'').toLowerCase();
+        var symbol=(data[i].symbol||'').toLowerCase();
+        if(name.indexOf(kwLow)!==-1||symbol.indexOf(kwLow)!==-1){
+          match=data[i];
+          break;
+        }
+      }
+      if(!match) return {found:false,score:0,name:'',marketCap:0};
+      var mc=match.usd_market_cap||0;
+      var age=Math.max(1,Math.round((Date.now()/1000-(match.created_timestamp||0))/3600));
+      var score=age<1?15:age<6?10:age<24?5:2;
+      return {found:true,score:score,name:match.name,symbol:match.symbol,marketCap:Math.round(mc),age:age};
+    })
+    .catch(function(){return {found:false,score:0,name:'',marketCap:0};});
+}
+
+function buildSignal(kw,rd,cg,dex,gt,pf){
+  gt=gt||{trending:false,score:0};
+  pf=pf||{found:false,score:0};
   // CRITERION 1: Volume Spike (0-25)
   // Real spike: today vs daily average of last 6 days (from Reddit week data)
   var spikeRatio=rd.realSpike||1;
@@ -436,7 +498,12 @@ function buildSignal(kw,rd,cg,dex){
   // avg upvote score indicates real engagement vs bots
   var engScore=Math.min(15,Math.round(Math.log(Math.max(1,rd.avg)+1)/Math.log(201)*15));
 
-  var totalScore=volScore+ctxScore+gapScore+dexScore+engScore;
+  // BONUS: Google Trends spike (+0-15)
+  var gtScore=gt.trending?Math.min(15,gt.score+5):0;
+  // BONUS: Pump.fun new token (+0-10)
+  var pfScore=pf.found?pf.score:0;
+
+  var totalScore=volScore+ctxScore+gapScore+dexScore+engScore+gtScore+pfScore;
   totalScore=Math.min(100,totalScore);
 
   var level=totalScore>65?'crit':totalScore>40?'high':'med';
@@ -462,7 +529,7 @@ function buildSignal(kw,rd,cg,dex){
 
   return {
     kw:kw,score:totalScore,level:level,
-    spikeRatio:spikeRatio,spikeLabel:spikeLabel,
+    spikeRatio:spikeRatio,spikeLabel:spikeLabel,gtTrending:gt.trending,gtTitle:gt.title||'',gtScore:gtScore,pfFound:pf.found,pfName:pf.name||'',pfSymbol:pf.symbol||'',pfMarketCap:pf.marketCap||0,pfAge:pf.age||0,pfScore:pfScore,
     rdCount:rd.count,rdAvg:rd.avg,rdTop:rd.top,rdSub:rd.sub,rdTopScore:rd.topScore,rdCryptoRatio:rd.cryptoRatio,rdDailyBaseline:rd.dailyBaseline||0,rdWeekCount:rd.weekCount||0,
     cgStatus:cg.status,cgName:cg.name,cgRank:cg.rank,cgSymbol:cg.symbol||'',
     dexFound:dex.found,dexVol:dex.topVol,dexName:dex.topName,dexChange:dex.topChange,dexLiq:dex.topLiq,dexCount:dex.count,
@@ -596,6 +663,8 @@ function renderDetail(sig){
   else analysisLines.push('<strong>BASELINE:</strong> Normal activity level. No anomaly detected yet.');
   if(sig.rdCount>0) analysisLines.push(sig.rdCount+' Reddit posts today (7-day daily avg: '+sig.rdDailyBaseline+'), avg upvote score '+sig.rdAvg+'.');
   if(sig.rdCryptoRatio>30) analysisLines.push(sig.rdCryptoRatio+'% of posts are crypto-related — strong signal quality.');
+  if(sig.gtTrending) analysisLines.push('<strong>🔥 GOOGLE TRENDS:</strong> "'+sig.gtTitle+'" is trending on Google right now.');
+  if(sig.pfFound) analysisLines.push('<strong>⚡ PUMP.FUN:</strong> New token <strong>'+sig.pfName+' ('+sig.pfSymbol+')</strong> launched '+sig.pfAge+'h ago. Market cap: $'+sig.pfMarketCap.toLocaleString()+'.');
   if(sig.cgStatus==='none') analysisLines.push('<strong>No token found on CoinGecko.</strong> Unclaimed keyword — high opportunity window if trend escalates.');
   else if(sig.cgStatus==='exact') { var rankStr=sig.cgRank?' (#'+sig.cgRank+')':''; analysisLines.push('Token exists: <strong>'+sig.cgName+'</strong>'+rankStr+'.'); }
   if(sig.dexFound) analysisLines.push('DexScreener: '+sig.dexCount+' pairs found. Top 24h vol: '+dexVolStr+'. Liquidity: '+dexLiqStr+'.');
